@@ -2,7 +2,7 @@
 ================================================================================
 LEGAL CASE ANALYSIS REPORT
 ================================================================================
-Generated: 2026-02-05 17:11:39
+Generated: 2026-02-05 17:14:26
 Case Number: 2024-CR-005678
 Court: County Criminal Court
 Judge: Hon. Robert Mitchell
@@ -43,6 +43,23 @@ Guilty Act (Actus Reus):
 JURY VERDICTS & FINDINGS
 --------------------------------------------------------------------------------
 
+CHARGE: Theft
+----------------------------------------
+  Verdict: Guilty
+  Recommendation: Guilty (Strong Evidence)
+  Confidence Level: 100.0%
+  
+  Prosecution Score: 0.765
+  Defense Score: 0.0
+  Difference: 0.765
+  Threshold: 0.6
+
+  PROSECUTION ARGUMENTS:
+    • Direct Theft Evidence: 0.765 (weight: 0.9)
+       Defendant committed theft of victim's property
+
+  DEFENSE ARGUMENTS:
+
 
 LEGAL ANALYSIS
 --------------------------------------------------------------------------------
@@ -71,10 +88,10 @@ CONCLUSION
 
 SUMMARY OF FINDINGS:
 
-  Total Charges: 0
-  Guilty Verdicts: 0
+  Total Charges: 1
+  Guilty Verdicts: 1
   Not Guilty Verdicts: 0
-  Average Confidence: 0%
+  Average Confidence: 100.0%
 
 RECOMMENDATIONS:
   This analysis is intended for educational/reference purposes only.

@@ -141,7 +141,7 @@ class NeuralPerceptionModule:
     def __init__(self):
         self.actions = {
             "assault": ["assault", "attack", "hit", "punch", "strike"],
-            "theft": ["steal", "rob", "take", "shoplifted"],
+            "theft": ["steal", "rob", "take", "shoplifted", "stolen", "burglary", "theft", "pilfered"],
             "battery": ["beat", "struck", "kicked"],
             "murder": ["kill", "murdered", "slayed"],
             "fraud": ["deceive", "defraud", "scam", "cheated"],
@@ -192,15 +192,43 @@ class NeuralPerceptionModule:
                 for action_type, verbs in self.actions.items():
                     if token.lemma_ in verbs:
                         action = action_type
-                        # Extract subject (attacker) and object (victim)
+                        
+                        # Extract subject and object with multiple patterns
                         for child in token.children:
+                            # Active voice: nsubj (attacker)
                             if child.dep_ == "nsubj":
                                 attacker = child.text
-                            if child.dep_ in ["dobj", "pobj"]:
+                            # Passive voice: nsubjpass (victim)
+                            elif child.dep_ == "nsubjpass":
                                 victim = child.text
+                            # Direct objects
+                            elif child.dep_ in ["dobj", "pobj"]:
+                                victim = child.text
+                            # Prepositional phrases (from, to)
+                            elif child.dep_ == "prep":
+                                for grandchild in child.children:
+                                    if child.text == "from":
+                                        victim = grandchild.text
+                                    elif child.text == "to":
+                                        victim = grandchild.text
+                        
+                        # For passive voice, extract agent (attacker) from "by" phrase
+                        if not attacker and victim:
+                            for child in token.children:
+                                if child.dep_ == "agent":
+                                    attacker = child.text
+                        
+                        # Fallback: use extracted entities if available
+                        if not attacker and extracted_entities.get(action):
+                            attacker = extracted_entities[action][0].name if extracted_entities[action] else "Unknown"
+                        
                         break
             
             if action and attacker and victim:
+                # Clean up names (remove articles, prefixes)
+                attacker = attacker.replace("Ms. ", "").replace("Mr. ", "").strip()
+                victim = victim.replace("Ms. ", "").replace("Mr. ", "").strip()
+                
                 predicate = f"{action.capitalize()}({attacker},{victim})"
                 fact = Fact(
                     predicate=predicate,
