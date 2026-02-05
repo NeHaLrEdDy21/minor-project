@@ -1,0 +1,86 @@
+
+================================================================================
+LEGAL CASE ANALYSIS REPORT
+================================================================================
+Generated: 2026-02-05 17:11:39
+Case Number: 2024-CR-005678
+Court: County Criminal Court
+Judge: Hon. Robert Mitchell
+Date Filed: 2024-02-20
+Location: County Courthouse, District 3
+================================================================================
+
+
+CASE DETAILS
+--------------------------------------------------------------------------------
+PARTIES:
+  Plaintiff(s): People of the State
+  Defendant(s): Marcus Reynolds, James Tyler
+
+CHARGES:
+  • Theft
+  • Fraud
+  • Conspiracy
+
+CASE TYPE: Criminal
+
+
+CHRONOLOGICAL TIMELINE
+--------------------------------------------------------------------------------
+
+  [1] Theft(theft,minutes)
+       Confidence: 0.85
+       Entities: N/A
+
+
+EVIDENCE ANALYSIS
+--------------------------------------------------------------------------------
+
+Guilty Act (Actus Reus):
+  • Theft(theft,minutes)
+
+
+JURY VERDICTS & FINDINGS
+--------------------------------------------------------------------------------
+
+
+LEGAL ANALYSIS
+--------------------------------------------------------------------------------
+
+APPLICABLE CHARGES:
+  • Theft
+
+BURDEN OF PROOF:
+  The burden of proof in criminal proceedings is "beyond a reasonable doubt."
+  This system uses a threshold (0.6) to model this standard.
+  
+  Prosecution Score: Evidence supporting guilt
+  Defense Score: Evidence supporting innocence
+  Verdict: Guilty if (Prosecution - Defense) >= Threshold
+
+METHODOLOGY:
+  1. Neural Extraction: Extracts facts from case narrative
+  2. Symbolic Grounding: Maps facts to legal predicates
+  3. Rule-Based Reasoning: Applies legal inference rules
+  4. Burden of Proof: Evaluates evidence strength
+  5. Jury Decision: Determines verdict with confidence
+
+
+CONCLUSION
+--------------------------------------------------------------------------------
+
+SUMMARY OF FINDINGS:
+
+  Total Charges: 0
+  Guilty Verdicts: 0
+  Not Guilty Verdicts: 0
+  Average Confidence: 0%
+
+RECOMMENDATIONS:
+  This analysis is intended for educational/reference purposes only.
+  Actual legal proceedings require qualified legal representation and proper court jurisdiction.
+
+
+================================================================================
+END OF REPORT
+================================================================================
