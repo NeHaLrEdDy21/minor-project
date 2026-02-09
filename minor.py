@@ -8,6 +8,31 @@ from datetime import datetime
 
 nlp = spacy.load("en_core_web_sm")
 
+import json
+import warnings
+import subprocess
+import sys
+
+# LLM and TTS imports (optional, with graceful fallbacks)
+try:
+    from langchain.llms import Ollama
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    warnings.warn("langchain not installed. LLM defense analysis disabled. Install with: pip install langchain")
+
+try:
+    from TTS.api import TTS as CoquiTTS
+    COQUI_AVAILABLE = True
+except ImportError:
+    COQUI_AVAILABLE = False
+    warnings.warn("coqui-tts not installed. TTS disabled. Install with: pip install TTS")
+
+try:
+    import pyttsx3
+    PYTTSX3_AVAILABLE = True
+except ImportError:
+    PYTTSX3_AVAILABLE = False
 # ============================================================================
 # DOCUMENT MODEL: Case Document Representation
 # ============================================================================
@@ -126,6 +151,416 @@ class Entity:
     name: str
     entity_type: str  # "person", "object", "location", etc.
     confidence: float
+
+
+# ============================================================================
+# LLM DEFENSE ANALYZER: AI-Powered Defense Arguments
+# ============================================================================
+
+@dataclass
+class DefenseAnalysis:
+    """Results from LLM-based defense analysis"""
+    generated_arguments: List[Dict]  # [{name, strength, premises, description}, ...]
+    augmented_score: float  # Total defense score from LLM arguments
+    confidence: float  # Confidence in LLM-generated arguments
+    reasoning_chains: List[str]  # Explanation of reasoning
+    llm_model: str = "llama2-7b"
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+class LLMDefenseAnalyzer:
+    """
+    Augments symbolic defense scoring with LLM-generated defense arguments.
+    Uses local Llama model via LangChain for legal reasoning.
+    """
+
+    def __init__(self, model_name: str = "llama2", temperature: float = 0.3,
+                 backend: str = "ollama"):
+        """
+        Initialize LLM defense analyzer.
+
+        Args:
+            model_name: Model name (e.g., "llama2", "neural-chat")
+            temperature: LLM temperature (0.3 for legal consistency)
+            backend: Backend type ("ollama" for local, "huggingface" for API)
+        """
+        self.model_name = model_name
+        self.temperature = temperature
+        self.backend = backend
+        self.llm = None
+        self.initialized = False
+
+        if LANGCHAIN_AVAILABLE:
+            try:
+                if backend == "ollama":
+                    self.llm = Ollama(model=model_name, temperature=temperature)
+                self.initialized = True
+                print(f"✓ LLM initialized: {model_name} (temperature={temperature})")
+            except Exception as e:
+                print(f"⚠ LLM initialization failed: {e}")
+                print(f"  Ensure ollama is running: ollama serve")
+                print(f"  And model is pulled: ollama pull {model_name}")
+        else:
+            print("⚠ LangChain not installed. LLM defense analysis disabled.")
+            print("  Install with: pip install langchain")
+
+    def analyze_defense(self, charge: str, facts: List['Fact'],
+                       prosecution_rules: List['Rule'],
+                       prosecution_score: float,
+                       kb: 'SymbolicKnowledgeBase',
+                       narrative: str = "") -> DefenseAnalysis:
+        """
+        Generate defense arguments using LLM.
+
+        Args:
+            charge: Charge type (e.g., "Assault", "Theft")
+            facts: List of extracted facts
+            prosecution_rules: Prosecution rules that were triggered
+            prosecution_score: Current prosecution score
+            kb: Symbolic knowledge base with grounded facts
+            narrative: Full case narrative for context
+
+        Returns:
+            DefenseAnalysis with LLM-generated arguments and augmented score
+        """
+        if not self.initialized or not self.llm:
+            return DefenseAnalysis(
+                generated_arguments=[],
+                augmented_score=0.0,
+                confidence=0.0,
+                reasoning_chains=["LLM not available"],
+                llm_model="none"
+            )
+
+        try:
+            # Build context prompt
+            prompt = self._build_defense_prompt(
+                charge, facts, prosecution_rules, prosecution_score, kb, narrative
+            )
+
+            # Query LLM
+            print(f"\n  [LLM] Querying defense analyzer for {charge}...")
+            response = self.llm.invoke(prompt)
+
+            # Parse response
+            defense_arguments = self._parse_llm_response(response, facts, kb)
+
+            # Score arguments
+            augmented_score = self._score_defense_arguments(defense_arguments, facts, kb)
+
+            # Calculate confidence
+            confidence = min(1.0, augmented_score / (prosecution_score + 0.1))
+
+            print(f"      Generated {len(defense_arguments)} defense arguments")
+            print(f"      Augmented defense score: {augmented_score:.3f}")
+
+            return DefenseAnalysis(
+                generated_arguments=defense_arguments,
+                augmented_score=augmented_score,
+                confidence=confidence,
+                reasoning_chains=self._extract_reasoning_chains(defense_arguments),
+                llm_model=self.model_name
+            )
+
+        except Exception as e:
+            print(f"    ⚠ LLM analysis failed: {e}")
+            return DefenseAnalysis(
+                generated_arguments=[],
+                augmented_score=0.0,
+                confidence=0.0,
+                reasoning_chains=[f"Error: {str(e)}"],
+                llm_model=self.model_name
+            )
+
+    def _build_defense_prompt(self, charge: str, facts: List,
+                             prosecution_rules: List, prosecution_score: float,
+                             kb: 'SymbolicKnowledgeBase', narrative: str) -> str:
+        """Build structured prompt for defense analysis"""
+
+        facts_str = "\n  ".join([f.predicate for f in facts[:10]])  # Top 10 facts
+        prosecution_args = "\n  ".join([r.description for r in prosecution_rules[:5]])
+        kb_facts = "\n  ".join([f"{pred}: {conf}" for pred, conf in list(kb.facts.items())[:10]])
+
+        prompt = f"""You are a legal defense expert analyzing a criminal case to develop defense arguments.
+
+CASE CHARGE: {charge}
+PROSECUTION SCORE: {prosecution_score:.2f}
+
+EXTRACTED FACTS:
+  {facts_str}
+
+GROUNDED KB FACTS:
+  {kb_facts}
+
+PROSECUTION ARGUMENTS:
+  {prosecution_args}
+
+CASE NARRATIVE EXCERPT:
+  {narrative[:500] if narrative else "N/A"}
+
+Task: Generate 3-5 defense arguments that:
+1. Address specific prosecution arguments
+2. Are grounded in the facts above (only cite facts from EXTRACTED FACTS and KB FACTS)
+3. Explain alternative interpretations of evidence
+4. Cite confidence/strength (1-10 scale) for each argument
+5. Include supporting facts from the list above
+
+IMPORTANT: Only reference facts that appear in the EXTRACTED FACTS or KB FACTS sections.
+Do NOT invent evidence that wasn't extracted.
+
+Format response as JSON (machine-parseable):
+{{"defense_arguments": [
+  {{"name": "Argument Name",
+    "description": "Why this defends against prosecution",
+    "strength": 7,
+    "supporting_facts": ["Fact1", "Fact2"],
+    "addresses_prosecution": "Which prosecution argument this counters"
+  }}
+]}}
+
+Start with the JSON object. Include nothing before or after it."""
+
+        return prompt
+
+    def _parse_llm_response(self, response: str, facts: List,
+                           kb: 'SymbolicKnowledgeBase') -> List[Dict]:
+        """Parse LLM response and validate arguments"""
+
+        arguments = []
+
+        # Extract JSON from response
+        try:
+            # Remove markdown code blocks if present
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0].strip()
+
+            parsed = json.loads(response)
+
+            if "defense_arguments" in parsed:
+                for arg in parsed["defense_arguments"]:
+                    # Validate supporting facts exist in KB
+                    valid_facts = []
+                    for fact_str in arg.get("supporting_facts", []):
+                        if any(fact_str in pred for pred in kb.facts.keys()):
+                            valid_facts.append(fact_str)
+
+                    arguments.append({
+                        "name": arg.get("name", "Defense Argument"),
+                        "description": arg.get("description", ""),
+                        "strength": min(10, max(1, arg.get("strength", 5))),
+                        "supporting_facts": valid_facts,
+                        "addresses_prosecution": arg.get("addresses_prosecution", ""),
+                        "valid": len(valid_facts) > 0
+                    })
+        except json.JSONDecodeError:
+            print(f"    ⚠ Failed to parse LLM JSON response")
+        except Exception as e:
+            print(f"    ⚠ Error parsing response: {e}")
+
+        # Only return arguments with valid grounding
+        return [arg for arg in arguments if arg["valid"]]
+
+    def _score_defense_arguments(self, arguments: List[Dict], facts: List,
+                                kb: 'SymbolicKnowledgeBase') -> float:
+        """Calculate total defense score from arguments"""
+
+        if not arguments:
+            return 0.0
+
+        total_score = 0.0
+
+        for arg in arguments:
+            # Score = strength (1-10) * grounding_factor * confidence
+            strength = arg["strength"] / 10.0  # Normalize to 0-1
+
+            # Grounding factor: how many facts support this argument
+            grounding_factor = min(1.0, len(arg["supporting_facts"]) / 3.0)
+
+            # Get confidence of supporting facts
+            fact_confidences = [
+                kb.facts.get(fact, 0.5) for fact in arg["supporting_facts"]
+            ]
+            avg_confidence = sum(fact_confidences) / len(fact_confidences) if fact_confidences else 0.5
+
+            arg_score = strength * grounding_factor * avg_confidence
+            total_score += arg_score
+
+        return min(1.0, total_score)  # Cap at 1.0 (100%)
+
+    def _extract_reasoning_chains(self, arguments: List[Dict]) -> List[str]:
+        """Extract reasoning explanation from arguments"""
+        return [
+            f"{arg['name']}: {arg['description']}"
+            for arg in arguments
+        ]
+
+
+# ============================================================================
+# TEXT-TO-SPEECH MODULE: Verdict Audio Synthesis
+# ============================================================================
+
+class TTSModule:
+    """
+    Converts verdicts and legal findings to speech.
+    Supports coqui-tts (best quality, offline) with pyttsx3 fallback (fast, local).
+    """
+
+    def __init__(self, backend: str = "coqui"):
+        """
+        Initialize TTS module.
+
+        Args:
+            backend: "coqui" (quality), "pyttsx3" (fast), "auto" (try coqui, fallback)
+        """
+        self.backend = backend
+        self.tts_model = None
+        self.initialized = False
+        self.available_backends = []
+
+        self._initialize()
+
+    def _initialize(self):
+        """Initialize TTS engine with preference order"""
+
+        # Try coqui first (best quality)
+        if self.backend in ["coqui", "auto"] and COQUI_AVAILABLE:
+            try:
+                print("Initializing coqui-tts (this may take a moment on first run)...")
+                self.tts_model = CoquiTTS(model_name="tts_models/en/ljspeech/tacotron2-DDC",
+                                         gpu=False)  # Use gpu=True if CUDA available
+                self.backend = "coqui"
+                self.initialized = True
+                self.available_backends.append("coqui")
+                print("✓ coqui-tts initialized")
+                return
+            except Exception as e:
+                print(f"⚠ coqui-tts initialization failed: {e}")
+                self.available_backends.append("coqui-failed")
+
+        # Fallback to pyttsx3 (always available)
+        if self.backend in ["pyttsx3", "auto"] and PYTTSX3_AVAILABLE:
+            try:
+                self.tts_model = pyttsx3.init()
+                self.tts_model.setProperty('rate', 120)  # 120 wpm for legal clarity
+                self.tts_model.setProperty('volume', 0.9)
+                self.backend = "pyttsx3"
+                self.initialized = True
+                self.available_backends.append("pyttsx3")
+                print("✓ pyttsx3 initialized (fallback)")
+                return
+            except Exception as e:
+                print(f"⚠ pyttsx3 initialization failed: {e}")
+
+        if not self.initialized:
+            print("⚠ No TTS backend available")
+            print("  Install coqui-tts: pip install TTS")
+            print("  Or pyttsx3: pip install pyttsx3")
+
+    def generate_verdict_audio(self, verdict: 'VerdictReasoning',
+                              output_file: str = "verdict.wav",
+                              defense_arguments: List[Dict] = None) -> bool:
+        """
+        Convert verdict to speech audio file.
+
+        Args:
+            verdict: VerdictReasoning object with verdict details
+            output_file: Output file path (.wav or .mp3)
+            defense_arguments: Optional list of defense arguments to include
+
+        Returns:
+            True if successful, False otherwise
+        """
+
+        if not self.initialized:
+            print("⚠ TTS not initialized")
+            return False
+
+        # Build speech text
+        speech_text = self._build_verdict_speech(verdict, defense_arguments)
+
+        try:
+            if self.backend == "coqui":
+                return self._tts_coqui(speech_text, output_file)
+            elif self.backend == "pyttsx3":
+                return self._tts_pyttsx3(speech_text, output_file)
+        except Exception as e:
+            print(f"⚠ TTS generation failed: {e}")
+            return False
+
+        return False
+
+    def _build_verdict_speech(self, verdict: 'VerdictReasoning',
+                             defense_arguments: List[Dict] = None) -> str:
+        """Build natural-language verdict speech"""
+
+        # Start with verdict announcement
+        speech = f"""
+        VERDICT ANNOUNCEMENT FOR {verdict.charge}
+
+        The jury finds the defendant {verdict.verdict}.
+
+        Confidence Level: {verdict.confidence * 100:.0f} percent.
+        """
+
+        # Add recommendation
+        speech += f"""
+        Verdict Recommendation: {verdict.recommendation}.
+        """
+
+        # Add key evidence summary
+        if verdict.prosecution_arguments:
+            speech += f"""
+
+        Key Evidence for Prosecution:
+        """
+            for i, arg in enumerate(verdict.prosecution_arguments[:3], 1):
+                if isinstance(arg, dict):
+                    speech += f"        {i}. {arg.get('description', 'Evidence presented')}\n"
+
+        # Add defense arguments if available
+        if defense_arguments:
+            speech += f"""
+
+        Key Defense Arguments:
+        """
+            for i, arg in enumerate(defense_arguments[:3], 1):
+                speech += f"        {i}. {arg.get('description', 'Defense argument')}\n"
+
+        # Add score breakdown
+        speech += f"""
+
+        Score Breakdown:
+        Prosecution Score: {verdict.prosecution_score:.2f}
+        Defense Score: {verdict.defense_score:.2f}
+
+        This is the official verdict based on the evidence presented and legal burden of proof.
+        """
+
+        return speech
+
+    def _tts_coqui(self, text: str, output_file: str) -> bool:
+        """Use coqui-tts for high-quality synthesis"""
+        try:
+            self.tts_model.tts_to_file(text=text, file_path=output_file)
+            print(f"✓ Audio verdict saved: {output_file}")
+            return True
+        except Exception as e:
+            print(f"✗ Coqui TTS failed: {e}")
+            return False
+
+    def _tts_pyttsx3(self, text: str, output_file: str) -> bool:
+        """Use pyttsx3 for fast local synthesis"""
+        try:
+            self.tts_model.save_to_file(text, output_file)
+            self.tts_model.runAndWait()
+            print(f"✓ Audio verdict saved: {output_file}")
+            return True
+        except Exception as e:
+            print(f"✗ pyttsx3 TTS failed: {e}")
+            return False
+
 
 @dataclass
 class Fact:
@@ -793,23 +1228,62 @@ END OF REPORT
             print(f"❌ Error saving report: {e}")
             return False
 
+    def generate_verdict_audio(self, save_dir: str = ".", backend: str = None) -> Optional[str]:
+        """Generate audio files for all verdicts and return the first audio path or None.
+
+        Args:
+            save_dir: directory to save audio files
+            backend: tts backend override ("coqui" or "pyttsx3"); defaults to available
+        Returns:
+            Path to generated audio file for the first verdict, or None if generation failed
+        """
+        # Choose backend
+        tts_backend = backend or ("coqui" if COQUI_AVAILABLE else ("pyttsx3" if PYTTSX3_AVAILABLE else None))
+        if not tts_backend:
+            print("⚠ No TTS backend available for audio generation")
+            return None
+
+        tts = TTSModule(backend=tts_backend)
+        audio_files = []
+
+        for v in self.verdicts:
+            safe_charge = v.charge.replace(' ', '_')
+            output_path = f"{save_dir}/VERDICT_{self.document.case_number}_{safe_charge}.wav"
+            defense_args = getattr(v, 'llm_arguments', None) or []
+            success = tts.generate_verdict_audio(v, output_path, defense_arguments=defense_args)
+            if success:
+                audio_files.append(output_path)
+
+        if audio_files:
+            print(f"✓ Generated {len(audio_files)} audio files. First: {audio_files[0]}")
+            return audio_files[0]
+        else:
+            print("⚠ No audio files generated")
+            return None
+
 # ============================================================================
 # MAIN PIPELINE: Complete Analysis from Text or Document
 # ============================================================================
 
 def analyze_case_document(document: CaseDocument, theta: float = 0.6, 
-                         charges_to_evaluate: List[str] = None) -> Dict:
+                         charges_to_evaluate: List[str] = None, llm_weight: float = 0.7, 
+                         enable_audio: bool = False, llm_model: str = "llama2",
+                         audio_output: str = None) -> Dict:
     """
     Complete pipeline for case document analysis:
-    Extract → Ground → Reason → Summarize → Jury Decision → Report
+    Extract → Ground → Reason → [LLM Defense Analysis] → Blended Scoring → Summarize → Jury Decision → Report
     
     Args:
         document: CaseDocument object
         theta: Burden of proof threshold (default 0.6)
         charges_to_evaluate: Specific charges to evaluate (None = all)
+        llm_weight: Weight for LLM defense scoring (0.0-1.0, default 0.7 = 70% LLM)
+        enable_audio: Generate audio file of verdict (default False)
+        llm_model: Llama model name (default "llama2")
+        audio_output: Output path for audio file
     
     Returns:
-        Dict with facts, KB, verdicts, summary, and report
+        Dict with facts, KB, verdicts, summary, report, and optionally audio_file
     """
     print("=" * 80)
     print("LEGAL CASE ANALYSIS SYSTEM")
@@ -940,6 +1414,76 @@ def analyze_case_document(document: CaseDocument, theta: float = 0.6,
             print(f"    Verdict: {result['verdict']}")
             print(f"    Prosecution: {result['prosecution_score']} | Defense: {result['defense_score']} | Diff: {result['difference']:.3f}")
     
+        # STEP 4.5: LLM Defense Analysis (if enabled)
+        defense_analyses = {}
+        if llm_weight > 0 and LANGCHAIN_AVAILABLE:
+            print("\n[LLM DEFENSE] Analyzing defense strategies with Llama...")
+            llm_analyzer = LLMDefenseAnalyzer(model_name=llm_model, temperature=0.3)
+        
+            for charge_type in results.keys():
+                # Get prosecution rules for context
+                prosecution_rules = [r for r in kb.rules.get(charge_type, []) if r.side == "prosecution"]
+            
+                # Analyze defense
+                defense_analysis = llm_analyzer.analyze_defense(
+                    charge=charge_type,
+                    facts=facts,
+                    prosecution_rules=prosecution_rules,
+                    prosecution_score=results[charge_type]["prosecution_score"],
+                    kb=kb,
+                    narrative=document.narrative[:1000]  # First 1000 chars for context
+                )
+            
+                defense_analyses[charge_type] = defense_analysis
+            
+                if defense_analysis.generated_arguments:
+                    print(f"    {charge_type}: Generated {len(defense_analysis.generated_arguments)} defense arguments")
+                    print(f"      Base defense score: {results[charge_type]['defense_score']:.3f}")
+                    print(f"      LLM augmented score: {defense_analysis.augmented_score:.3f}")
+        else:
+            if llm_weight > 0 and not LANGCHAIN_AVAILABLE:
+                print("\n⚠ LangChain not available. Skipping LLM defense analysis.")
+                print("  Install with: pip install langchain")
+            defense_analyses = {charge_type: None for charge_type in results.keys()}
+    
+        # STEP 4.6: Blend symbolic and LLM scores
+        print("\n[BLENDING] Applying weighted blending of symbolic and LLM scores...")
+        symbolic_weight = 1.0 - llm_weight  # Automatically inverse weight
+    
+        for charge_type in results.keys():
+            original_defense = results[charge_type]["defense_score"]
+            original_diff = results[charge_type]["difference"]
+            original_verdict = results[charge_type]["verdict"]
+        
+            # Get blended defense score
+            if defense_analyses[charge_type] and defense_analyses[charge_type].augmented_score > 0:
+                llm_defense = defense_analyses[charge_type].augmented_score
+                blended_defense = (original_defense * symbolic_weight) + (llm_defense * llm_weight)
+                results[charge_type]["defense_score"] = blended_defense
+                results[charge_type]["defense_score_original"] = original_defense  # Store original for reference
+                results[charge_type]["defense_score_llm"] = llm_defense
+                results[charge_type]["llm_arguments"] = defense_analyses[charge_type].generated_arguments
+            else:
+                blended_defense = original_defense
+                results[charge_type]["llm_arguments"] = []
+        
+            # Recalculate verdict with blended scores
+            prosecution_score = results[charge_type]["prosecution_score"]
+            blended_diff = prosecution_score - blended_defense
+            blended_verdict = "Guilty" if blended_diff >= theta else "Not Guilty"
+        
+            results[charge_type]["difference"] = blended_diff
+            results[charge_type]["difference_original"] = original_diff
+            results[charge_type]["verdict"] = blended_verdict
+            results[charge_type]["verdict_original"] = original_verdict
+        
+            print(f"\n  {charge_type}:")
+            print(f"    Symbolic: Defense={original_defense:.3f}, Diff={original_diff:.3f}, Verdict={original_verdict}")
+            if defense_analyses[charge_type] and defense_analyses[charge_type].augmented_score > 0:
+                print(f"    LLM Augmented: Defense={blended_defense:.3f}, Diff={blended_diff:.3f}, Verdict={blended_verdict}")
+                if original_verdict != blended_verdict:
+                    print(f"    ✓ Verdict CHANGED due to LLM defense analysis!")
+    
     # STEP 5: Generate Case Summary
     print("\n[SUMMARY] Generating case summary...")
     summarizer = CaseSummarizer(facts, {"accused": accused, "victim": victim})
@@ -960,6 +1504,38 @@ def analyze_case_document(document: CaseDocument, theta: float = 0.6,
     report = LegalCaseReport(document, case_summary, verdicts)
     full_report = report.generate_full_report()
     
+    # STEP 8: Generate Audio (optional)
+    audio_file = None
+    if enable_audio:
+        if COQUI_AVAILABLE or PYTTSX3_AVAILABLE:
+            print("\n[AUDIO] Generating verdict audio...")
+        
+            # Determine output file
+            if audio_output is None:
+                audio_output = f"VERDICT_{document.case_number}_AUDIO.wav"
+        
+            # Create TTS module
+            tts = TTSModule(backend="coqui" if COQUI_AVAILABLE else "pyttsx3")
+        
+            # Get first verdict (main charge)
+            if verdicts:
+                defense_args = verdicts[0].__dict__.get("llm_arguments", [])
+                success = tts.generate_verdict_audio(
+                    verdict=verdicts[0],
+                    output_file=audio_output,
+                    defense_arguments=defense_args
+                )
+            
+                if success:
+                    audio_file = audio_output
+                    print(f"  ✓ Audio verdict saved: {audio_output}")
+                else:
+                    print(f"  ⚠ Audio generation failed")
+        else:
+            print("\n⚠ Audio generation requested but no TTS backend available")
+            print("  Install with: pip install TTS  (for coqui-tts)")
+            print("  Or: pip install pyttsx3  (for pyttsx3)")
+    
     print("\n" + "=" * 80)
     return {
         "document": document,
@@ -969,7 +1545,10 @@ def analyze_case_document(document: CaseDocument, theta: float = 0.6,
         "case_summary": case_summary,
         "verdicts": verdicts,
         "report": full_report,
-        "report_generator": report
+            "report_generator": report,
+            "audio_file": audio_file,
+            "llm_weight": llm_weight,
+            "defense_analyses": defense_analyses if llm_weight > 0 else {}
     }
 
 

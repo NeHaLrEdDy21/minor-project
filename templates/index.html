@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legal Case Analysis System - Case Upload</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>⚖️ Legal Case Analysis System</h1>
+            <p class="subtitle">Neuro-Symbolic AI with LLM Defense Analysis & Audio Narration</p>
+            <div class="system-status">
+                <span id="llm-status" class="status-badge">{{ 'LLM: Ready' if llm_available else 'LLM: Unavailable' }}</span>
+                <span id="tts-status" class="status-badge">{{ 'Audio: Ready' if tts_available else 'Audio: Unavailable' }}</span>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <section class="upload-section">
+                <h2>Upload Case Document</h2>
+                <form id="case-form" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="case-file">Case Document (Text File)</label>
+                        <input type="file" id="case-file" name="case_file" accept=".txt" 
+                               class="file-input">
+                        <p class="help-text">Upload a .txt file with case information or paste directly below</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="case-text">Or Paste Case Text Directly</label>
+                        <textarea id="case-text" name="case_text" placeholder="CASE NUMBER: ...
+PLAINTIFF: ...
+DEFENDANT: ...
+COURT: ...
+JUDGE: ...
+DATE FILED: ...
+LOCATION: ...
+CHARGES: ...
+NARRATIVE:
+[Case details...]" 
+                                  class="form-textarea" rows="10"></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="theta">Burden of Proof Threshold (θ)</label>
+                            <input type="range" id="theta" name="theta" 
+                                   min="{{ theta_default - 0.2 }}" max="{{ theta_default + 0.2 }}" 
+                                   step="0.05" value="{{ theta_default }}"
+                                   class="range-input">
+                            <span id="theta-value" class="range-value">{{ theta_default }}</span>
+                            <p class="help-text">0.4=More Guilty | 0.6=Standard | 0.8=More Innocent</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="llm-weight">LLM Defense Weight</label>
+                            <input type="range" id="llm-weight" name="llm_weight" 
+                                   min="0" max="100" step="5" value="{{ llm_weight_default }}"
+                                   class="range-input" {% if not llm_available %}disabled{% endif %}>
+                            <span id="llm-value" class="range-value">{{ llm_weight_default }}%</span>
+                            <p class="help-text">0%=Symbolic Only | 50%=Balanced | 100%=LLM Only</p>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group checkbox">
+                            <input type="checkbox" id="enable-audio" name="enable_audio" 
+                                   {% if tts_available %}checked{% else %}disabled{% endif %}>
+                            <label for="enable-audio">Generate Audio Verdict Narration</label>
+                            <p class="help-text">{{ 'Ready' if tts_available else 'Install TTS to enable' }}</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="llm-model">LLM Model</label>
+                            <select id="llm-model" name="llm_model" 
+                                    {% if not llm_available %}disabled{% endif %}>
+                                <option value="llama2">Llama 2</option>
+                                <option value="neural-chat">Neural Chat</option>
+                                <option value="dolphin-phi">Dolphin Phi</option>
+                            </select>
+                            <p class="help-text">Requires ollama to be running locally</p>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary" id="analyze-btn">
+                            <span class="btn-text">Analyze Case</span>
+                            <span class="btn-spinner" id="btn-spinner" style="display: none;">🔄</span>
+                        </button>
+                        <button type="reset" class="btn btn-secondary">Clear</button>
+                    </div>
+                </form>
+
+                <div id="error-message" class="message error" style="display: none;"></div>
+                <div id="loading-message" class="message info" style="display: none;">
+                    <span class="spinner">⏳</span> Analyzing case (this may take a moment)...
+                </div>
+            </section>
+
+            <section class="sample-section">
+                <h2>Example Case Format</h2>
+                <pre class="code-block">CASE NUMBER: 2024-CR-001234
+PLAINTIFF: State of New York
+DEFENDANT: John Smith
+COURT: New York State Supreme Court
+JUDGE: Hon. Patricia Johnson
+DATE FILED: 2024-01-15
+LOCATION: New York County
+CHARGES: Assault on Minor, Battery
+NARRATIVE:
+On January 10, 2024, John Smith assaulted Mary Johnson, age 14,
+a minor student. The defendant struck the victim multiple times 
+with his fists, causing bruising and injuries...</pre>
+            </section>
+
+            <section class="info-section">
+                <h2>System Information</h2>
+                <div class="info-grid">
+                    <div class="info-card">
+                        <h3>🧠 Neuro-Symbolic AI</h3>
+                        <p>Neural NLP extraction (spaCy) combined with symbolic logic reasoning for evidence evaluation.</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>🤖 LLM Defense Analysis</h3>
+                        <p>Local Llama models generate contextual defense arguments to increase innocence scoring by up to 70%.</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>🎵 Text-to-Speech</h3>
+                        <p>Verdict narration via high-quality TTS (coqui-tts with pyttsx3 fallback).</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>⚖️ Burden of Proof</h3>
+                        <p>Implements standard legal threshold: prosecution must prove guilt beyond reasonable doubt (θ=0.6).</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>⚠️ DISCLAIMER: For educational purposes only. Not a substitute for qualified legal counsel.</p>
+            <p>© 2024-2026 Neuro-Symbolic Legal Analysis System</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

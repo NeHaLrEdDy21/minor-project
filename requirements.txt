@@ -1,0 +1,42 @@
+# Legal Case Analysis System - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# ============================================================================
+# CORE NLP & SYMBOLIC REASONING
+# ============================================================================
+spacy>=3.5.0              # Neural NLP for fact extraction
+# Download model with: python -m spacy download en_core_web_sm
+
+# ============================================================================
+# LLM INTEGRATION (LLM Defense Analysis)
+# ============================================================================
+langchain>=0.1.0          # LLM orchestration framework
+# Backends:
+llama-cpp-python>=0.2.0   # Run Llama models locally (alternative)
+# OR use ollama CLI: https://ollama.ai
+# Install model: ollama pull llama2:7b
+
+# ============================================================================
+# TEXT-TO-SPEECH (Verdict Narration)
+# ============================================================================
+TTS>=0.13.0               # Coqui TTS for high-quality audio
+pyttsx3>=2.90             # Fallback for fast, offline synthesis
+
+# ============================================================================
+# WEB INTERFACE
+# ============================================================================
+Flask>=2.3.0              # Web framework
+Werkzeug>=2.3.0           # WSGI utilities
+
+# ============================================================================
+# UTILITIES
+# ============================================================================
+python-dateutil>=2.8.0    # Date/time utilities
+PyYAML>=6.0               # YAML parsing for configs
+
+# ============================================================================
+# Optional Performance & Debugging
+# ============================================================================
+# ipython>=8.0.0          # Interactive shell (optional)
+# jupyter>=1.0.0          # Jupyter notebooks (optional)
+# matplotlib>=3.5.0       # Visualization (optional)
