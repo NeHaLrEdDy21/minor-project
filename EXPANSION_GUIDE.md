@@ -1,4 +1,5 @@
 # Expansion Summary: Legal Reasoning System
+I will make some changes here
 
 ## What Changed
 
@@ -33,11 +34,11 @@ Added `CaseSummarizer` class that generates:
 ### 3. **Unified Pipeline** (run_system function)
 Complete end-to-end workflow with clear stages:
 ```
-[NEURAL LAYER]    → Extract facts from text
-[SYMBOLIC LAYER]  → Ground in KB, add rules
-[RULES]           → Load legal inference rules
-[REASONING]       → Evaluate charges with burden of proof
-[SUMMARY]         → Generate case summary
+[NEURAL LAYER]    â Extract facts from text
+[SYMBOLIC LAYER]  â Ground in KB, add rules
+[RULES]           â Load legal inference rules
+[REASONING]       â Evaluate charges with burden of proof
+[SUMMARY]         â Generate case summary
 ```
 
 Each stage prints debug info so you can trace execution.
